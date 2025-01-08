@@ -1,0 +1,12 @@
+{
+  "name": "QQbot-webhook-to-websocket",
+  "type": "module",
+  "author": "ZY.霆生",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "express": "^4.18.3",
+    "luxon": "^3.5.0",
+    "tweetnacl": "^1.0.3",
+    "ws": "^8.18.0"
+  }
+}

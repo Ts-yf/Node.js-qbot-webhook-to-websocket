@@ -17,24 +17,25 @@ const urlfile = `${process.cwd().replace(/\\/g, '/')}/url.json`
 var cl = {}
 // 消息处理
 async function makeWebHook(req, secret) {
+  if (!secret) return req.res.send('secret参数为空')
   const data = req.body;
   if (data?.d["plain_token"]) {
-    log(`[${secret.slice(0, 3) + '***'}]回调配置消息：${JSON.stringify(data)}`)
+    log(`[${secret.slice(0, 3)}***]回调配置消息：${JSON.stringify(data)}`)
     return makeWebHookSign(req, secret);
   }
   await makeMsg(data, secret)
   if (useAuth) {
     if ((await hasAuth(secret)).isauth) {
-      log(`[${secret.slice(0, 3) + '***'}]已授权，尝试推送消息`);
+      log(`[${secret.slice(0, 3)}***]已授权，尝试推送消息`);
       if (webhook) await sendWebHook(secret, JSON.stringify(data), req);
       await sendWebSocket(secret, JSON.stringify(data));
       return req.res.sendStatus(200)
     } else {
-      log(`[${secret.slice(0, 3) + '***'}]未授权，忽略消息`)
+      log(`[${secret.slice(0, 3)}***]未授权，忽略消息`)
       return req.res.sendStatus(200)
     }
   }
-  log(`[${secret.slice(0, 3) + '***'}]尝试推送消息`);
+  log(`[${secret.slice(0, 3)}***]尝试推送消息`);
   if (webhook) await sendWebHook(secret, JSON.stringify(data), req);
   await sendWebSocket(secret, JSON.stringify(data));
   return req.res.sendStatus(200)
@@ -49,12 +50,12 @@ async function makeMsg(data, secret) {
     case 0:
       switch (t) {
         case 'GROUP_AT_MESSAGE_CREATE':
-          return log(`[${secret.slice(0, 3) + '***'}][群消息]：${d.content}`)
+          return log(`[${secret.slice(0, 3)}***][群消息]：${d.content}`)
         default:
-          return log(`[${secret.slice(0, 3) + '***'}]收到消息类型：${t}`)
+          return log(`[${secret.slice(0, 3)}***]收到消息类型：${t}`)
       }
     default:
-      return log(`[${secret.slice(0, 3) + '***'}]收到消息：${JSON.stringify(data)}`)
+      return log(`[${secret.slice(0, 3)}***]收到消息：${JSON.stringify(data)}`)
   }
 }
 
@@ -62,27 +63,31 @@ async function makeWebSocket(str, ws, secret) {
   let data = {}
   let op1 = JSON.stringify({ "op": 11 })
   let op2 = JSON.stringify({ "op": 0, "s": 1, "t": "READY", "d": { "version": 1, "session_id": "TSserver-bot-webhook-to-websocket", "user": { "bot": true }, "shard": [0, 0] } })
+  let op6 = { "op": 0, "s": 1, "t": "RESUMED", "d": "" }
   try { data = JSON.parse(str) } catch (err) { return log('解析ws消息错误', err) }
   if (!data.hasOwnProperty('op')) { await ws.send('{}'); return log('解析消息错误：缺少 op 字段') }
   if (!data.hasOwnProperty('d')) { await ws.send('{}'); return log('解析消息错误：缺少 d 字段') }
-  let op = data.op;
-  let d = data.d;
+  let op = data.op; let d = data.d;
   switch (op) {
     case 1:
-      log(`[${secret.slice(0, 3) + '***'}]心跳周期：${str}`)
+      log(`[${secret.slice(0, 3)}***]心跳周期：${str}`)
       return await ws.send(op1);
     case 2:
-      log(`[${secret.slice(0, 3) + '***'}]鉴权请求：${str}`)
+      log(`[${secret.slice(0, 3)}***]鉴权请求：${str}`)
       return await ws.send(op2);
+    case 6:
+      log(`[${secret.slice(0, 3)}***][${d.session_id}]重新连接：${d.seq}`)
+      op6.s = d.seq || 1
+      return await ws.send(JSON.stringify(op6));
     default:
-      log(`[${secret.slice(0, 3) + '***'}]收到消息：${str}`)
+      log(`[${secret.slice(0, 3)}***]收到消息：${str}`)
       return await ws.send(op2);
   }
 }
 
 async function sendWebSocket(secret, msg) {
   if ((!cl.hasOwnProperty(secret)) || (cl[secret].length == 0)) {
-    log(`[${secret.slice(0, 3) + '***'}]没有被连接`)
+    log(`[${secret.slice(0, 3)}***]没有被连接`)
     return;
   }
   for (let ws of cl[secret]) {
@@ -148,14 +153,18 @@ async function makeWebHookSign(req, secret) {
     Buffer.from(`${event_ts}${plain_token}`),
     sign.keyPair.fromSeed(Buffer.from(secret)).secretKey,
   )).toString("hex")
-  log(`[${secret.slice(0, 3) + '***'}]计算签名：${signature}`)
+  log(`[${secret.slice(0, 3)}***]计算签名：${signature}`)
   req.res.send({ plain_token, signature })
 }
+// 功能区END
+
+app.get('/', (req, res) => {
+  return res.send(JSON.stringify({ status: 'ok' }))
+});
 
 app.post('/webhook', async (req, res) => {
-  return await makeWebHook(req, req.query?.secret || '');
+  return await makeWebHook(req, req.query?.secret);
 });
-// 功能区END
 
 if (useAuth) {
   app.get('/sign', async (req, res) => {
@@ -223,13 +232,14 @@ const chatWS = new Server({ noServer: true }); //这里采用noServer
 chatWS.on("connection", (conn, req, secret) => {
   if (!cl.hasOwnProperty(secret)) cl[secret] = [];
   cl[secret].push(conn)
-  log(`[${secret.slice(0, 3) + '***'}]已连接[${cl[secret].length}]个实例`);
+  conn.send(JSON.stringify({"op": 10,"d": {"heartbeat_interval": 90000}}))
+  log(`[${secret.slice(0, 3)}***]已连接[${cl[secret].length}]个实例`);
   conn.on("message", async (str) => {
     return await makeWebSocket(str, conn, secret);
   });
   conn.on('close', () => {
     if (cl.hasOwnProperty(secret)) cl[secret] = cl[secret].filter(client => client !== conn);
-    log(`[${secret.slice(0, 3) + '***'}]断开连接`);
+    log(`[${secret.slice(0, 3)}***]断开连接`);
   });
 });
 

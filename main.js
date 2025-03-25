@@ -9,7 +9,7 @@ const app = express();
 app.use(express.json())
 
 const port = 8000;//服务端口
-const useAuth = true//使用授权服务
+const useAuth = false//使用授权服务
 const webhook = false//启动一对多WebHook转发服务，会把收到的消息二次转发到指定url（支持批量），适用于那些只支持原生webhook的框架（或者别的用途.?）
 
 const authfile = `${process.cwd().replace(/\\/g, '/')}/auth.json`
@@ -19,7 +19,7 @@ var cl = {}
 async function makeWebHook(req, secret) {
   if (!secret) return req.res.send('secret参数为空')
   const data = req.body;
-  if (data?.d["plain_token"]) {
+  if (data?.d?.hasOwnProperty("plain_token")) {
     log(`[${secret.slice(0, 3)}***]回调配置消息：${JSON.stringify(data)}`)
     return makeWebHookSign(req, secret);
   }

@@ -103,7 +103,7 @@ async function sendWebHook(secret, msg, req) {
   }
   for (let url of file[secret]) {
     try {
-      await axios.post(url, req.body, { headers: req.headers })
+      await axios.post(url, req.body)
     } catch (err) { log(err) }
   }
 }

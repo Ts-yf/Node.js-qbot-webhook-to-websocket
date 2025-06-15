@@ -4,17 +4,34 @@ import express from 'express';
 import fs from 'fs';
 import axios from 'axios';
 import { DateTime } from 'luxon';
+import path from 'path';
+import { fileURLToPath } from 'url';
 const { sign } = (await import("tweetnacl")).default
 const app = express();
 app.use(express.json())
 
-const port = 8000;//服务端口
+// 获取当前文件的目录路径
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// 添加静态文件服务
+app.use(express.static(path.join(__dirname, 'public')));
+
+const port = 1217;//服务端口
 const useAuth = false//使用授权服务
 const webhook = false//启动一对多WebHook转发服务，会把收到的消息二次转发到指定url（支持批量），适用于那些只支持原生webhook的框架（或者别的用途.?）
 
 const authfile = `${process.cwd().replace(/\\/g, '/')}/auth.json`
 const urlfile = `${process.cwd().replace(/\\/g, '/')}/url.json`
 var cl = {}
+
+// 统计数据
+let stats = {
+    activeConnections: 0,
+    webhookCount: 0,
+    messageCount: 0
+};
+
 // 消息处理
 async function makeWebHook(req, secret) {
   if (!secret) return req.res.send('secret参数为空')
@@ -29,6 +46,7 @@ async function makeWebHook(req, secret) {
       log(`[${secret.slice(0, 3)}***]已授权，尝试推送消息`);
       if (webhook) await sendWebHook(secret, JSON.stringify(data), req);
       await sendWebSocket(secret, JSON.stringify(data));
+      stats.webhookCount++;
       return req.res.sendStatus(200)
     } else {
       log(`[${secret.slice(0, 3)}***]未授权，忽略消息`)
@@ -38,6 +56,7 @@ async function makeWebHook(req, secret) {
   log(`[${secret.slice(0, 3)}***]尝试推送消息`);
   if (webhook) await sendWebHook(secret, JSON.stringify(data), req);
   await sendWebSocket(secret, JSON.stringify(data));
+  stats.webhookCount++;
   return req.res.sendStatus(200)
 }
 
@@ -93,6 +112,7 @@ async function sendWebSocket(secret, msg) {
   for (let ws of cl[secret]) {
     await ws.send(msg)
   }
+  stats.messageCount++;
 }
 
 async function sendWebHook(secret, msg, req) {
@@ -158,8 +178,28 @@ async function makeWebHookSign(req, secret) {
 }
 // 功能区END
 
+// API接口
+app.get('/api/config', (req, res) => {
+  // 获取当前连接数
+  let totalConnections = 0;
+  Object.keys(cl).forEach(key => {
+    totalConnections += cl[key].length;
+  });
+  stats.activeConnections = totalConnections;
+
+  return res.json({
+    config: {
+      useAuth,
+      webhook,
+      port
+    },
+    stats
+  });
+});
+
+// 主页
 app.get('/', (req, res) => {
-  return res.send(JSON.stringify({ status: 'ok' }))
+  return res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.post('/webhook', async (req, res) => {
@@ -262,4 +302,5 @@ server.on("upgrade", (req, socket, head) => {
 server.listen(port, '0.0.0.0', () => {
   log(`${useAuth ? '使用' : '不使用'}授权服务`);
   log(`服务器已开启，端口号：${port}`);
+  log(`UI界面访问地址: http://localhost:${port}`);
 });

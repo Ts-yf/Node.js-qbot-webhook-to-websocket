@@ -8,5 +8,8 @@
     "luxon": "^3.5.0",
     "tweetnacl": "^1.0.3",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.1"
   }
 }

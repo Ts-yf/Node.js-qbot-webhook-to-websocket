@@ -25,6 +25,10 @@ const authfile = `${process.cwd().replace(/\\/g, '/')}/auth.json`
 const urlfile = `${process.cwd().replace(/\\/g, '/')}/url.json`
 var cl = {}
 
+// 系统日志存储
+const systemLogs = [];
+const MAX_LOGS = 100; // 最多保存100条日志
+
 // 统计数据
 let stats = {
     activeConnections: 0,
@@ -132,12 +136,39 @@ async function sendWebHook(secret, msg, req) {
 // 功能区
 function log(...data) {
   const now = new Date();
-  const h = now.getHours();
-  const m = now.getMinutes();
-  const s = now.getSeconds();
-  const ms = now.getMilliseconds();
+  const h = now.getHours().toString().padStart(2, '0');
+  const m = now.getMinutes().toString().padStart(2, '0');
+  const s = now.getSeconds().toString().padStart(2, '0');
+  const ms = now.getMilliseconds().toString().padStart(3, '0');
   const time = `${h}:${m}:${s}:${ms}`;
-  console.log(`[TS-Wh-To-Ws][${time}]`, ...data)
+  
+  // 格式化日志消息
+  let logMessage = '';
+  for (const item of data) {
+    if (typeof item === 'object') {
+      try {
+        logMessage += JSON.stringify(item) + ' ';
+      } catch (e) {
+        logMessage += '[Object] ';
+      }
+    } else {
+      logMessage += item + ' ';
+    }
+  }
+  
+  // 存储日志
+  const logEntry = {
+    time,
+    message: logMessage.trim(),
+    type: 'info'
+  };
+  
+  systemLogs.unshift(logEntry); // 添加到日志开头
+  if (systemLogs.length > MAX_LOGS) {
+    systemLogs.pop(); // 删除最旧的日志
+  }
+  
+  console.log(`[TS-Wh-To-Ws][${time}]`, ...data);
 }
 
 function hasAuth(secret) {
@@ -194,6 +225,14 @@ app.get('/api/config', (req, res) => {
       port
     },
     stats
+  });
+});
+
+// 获取系统日志
+app.get('/api/logs', (req, res) => {
+  const count = parseInt(req.query.count) || 50;
+  return res.json({
+    logs: systemLogs.slice(0, Math.min(count, systemLogs.length))
   });
 });
 

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QQ机器人 Webhook 转 WebSocket 服务</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@4.1.1/animate.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-center text-blue-600">QQ机器人 Webhook 转 WebSocket 服务</h1>
+            <p class="text-center text-gray-600 mt-2">将QQ机器人的Webhook消息转发到WebSocket连接</p>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- 状态卡片 -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-4 text-blue-700">服务状态</h2>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-700">服务运行状态:</span>
+                        <span id="server-status" class="px-3 py-1 rounded-full text-white bg-green-500">运行中</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-700">授权模式:</span>
+                        <span id="auth-mode" class="font-medium">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-700">WebHook转发:</span>
+                        <span id="webhook-mode" class="font-medium">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-700">当前端口:</span>
+                        <span id="current-port" class="font-medium">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 连接统计 -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-4 text-blue-700">连接统计</h2>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-700">活跃WebSocket连接:</span>
+                        <span id="active-connections" class="font-medium">0</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-700">WebHook接收次数:</span>
+                        <span id="webhook-count" class="font-medium">0</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-700">消息转发次数:</span>
+                        <span id="message-count" class="font-medium">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 授权管理 -->
+            <div class="bg-white p-6 rounded-lg shadow-md md:col-span-2">
+                <h2 class="text-xl font-semibold mb-4 text-blue-700">授权管理</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="col-span-3 md:col-span-2">
+                        <label for="secret" class="block text-sm font-medium text-gray-700 mb-1">密钥</label>
+                        <input type="text" id="secret" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="输入密钥">
+                    </div>
+                    <div>
+                        <label for="hours" class="block text-sm font-medium text-gray-700 mb-1">小时数</label>
+                        <input type="number" id="hours" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" value="24">
+                    </div>
+                    <div class="col-span-3 flex space-x-2">
+                        <button id="query-auth" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition">查询授权</button>
+                        <button id="add-auth" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md transition">添加授权</button>
+                        <button id="reduce-auth" class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white font-medium py-2 px-4 rounded-md transition">减少授权</button>
+                        <button id="delete-auth" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md transition">删除授权</button>
+                    </div>
+                </div>
+                <div id="auth-result" class="mt-4 p-4 bg-gray-100 rounded-md hidden">
+                    <p class="font-medium text-gray-800">授权结果:</p>
+                    <div id="auth-result-content" class="mt-2"></div>
+                </div>
+            </div>
+
+            <!-- 日志显示 -->
+            <div class="bg-white p-6 rounded-lg shadow-md md:col-span-2">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-blue-700">实时日志</h2>
+                    <button id="clear-logs" class="text-sm bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded-md transition">清除</button>
+                </div>
+                <div id="logs" class="h-64 overflow-y-auto bg-gray-900 text-gray-100 p-4 rounded-md font-mono text-sm"></div>
+            </div>
+
+            <!-- WebSocket测试 -->
+            <div class="bg-white p-6 rounded-lg shadow-md md:col-span-2">
+                <h2 class="text-xl font-semibold mb-4 text-blue-700">WebSocket连接测试</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="col-span-3 md:col-span-2">
+                        <label for="ws-secret" class="block text-sm font-medium text-gray-700 mb-1">密钥</label>
+                        <input type="text" id="ws-secret" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="输入WebSocket连接密钥">
+                    </div>
+                    <div class="flex items-end">
+                        <button id="connect-ws" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition">连接</button>
+                    </div>
+                    <div class="col-span-3">
+                        <div class="flex items-center space-x-2 mb-2">
+                            <div id="ws-status" class="w-3 h-3 rounded-full bg-red-500"></div>
+                            <span id="ws-status-text" class="text-sm text-gray-700">未连接</span>
+                        </div>
+                        <div id="ws-messages" class="h-40 overflow-y-auto bg-gray-100 p-4 rounded-md font-mono text-sm"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="mt-8 text-center text-gray-600 pb-8">
+        <p>© 2024 QQbot-webhook-to-websocket | 作者: ZY.霆生</p>
+    </footer>
+
+    <script src="/js/main.js"></script>
+</body>
+</html> 

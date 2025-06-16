@@ -1,0 +1,98 @@
+/* 自定义样式 */
+body {
+    font-family: 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+}
+
+/* 日志区域样式 */
+#logs {
+    font-family: 'Courier New', monospace;
+    line-height: 1.5;
+}
+
+#logs .log-entry {
+    margin-bottom: 4px;
+    word-break: break-all;
+}
+
+#logs .log-entry.info {
+    color: #90cdf4;
+}
+
+#logs .log-entry.error {
+    color: #feb2b2;
+}
+
+#logs .log-entry.success {
+    color: #9ae6b4;
+}
+
+#logs .log-entry.warning {
+    color: #fbd38d;
+}
+
+/* WebSocket消息样式 */
+#ws-messages .message {
+    margin-bottom: 4px;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+#ws-messages .message.received {
+    background-color: #e2e8f0;
+}
+
+#ws-messages .message.sent {
+    background-color: #bee3f8;
+}
+
+/* 动画效果 */
+.transition {
+    transition: all 0.3s ease;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+    .container {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+    
+    .col-span-3 .flex {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .col-span-3 .flex button {
+        width: 100%;
+    }
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* 卡片悬浮效果 */
+.bg-white {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.bg-white:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+} 

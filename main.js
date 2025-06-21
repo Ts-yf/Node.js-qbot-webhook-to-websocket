@@ -44,6 +44,9 @@ async function makeWebHook(req, secret) {
     log(`[${secret.slice(0, 3)}***]回调配置消息：${JSON.stringify(data)}`)
     return makeWebHookSign(req, secret);
   }
+  // 先响应状态码，避免超时
+  req.res.sendStatus(200)
+  
   await makeMsg(data, secret)
   if (useAuth) {
     if ((await hasAuth(secret)).isauth) {
@@ -51,17 +54,16 @@ async function makeWebHook(req, secret) {
       if (webhook) await sendWebHook(secret, JSON.stringify(data), req);
       await sendWebSocket(secret, JSON.stringify(data));
       stats.webhookCount++;
-      return req.res.sendStatus(200)
+      return;
     } else {
       log(`[${secret.slice(0, 3)}***]未授权，忽略消息`)
-      return req.res.sendStatus(200)
+      return;
     }
   }
   log(`[${secret.slice(0, 3)}***]尝试推送消息`);
   if (webhook) await sendWebHook(secret, JSON.stringify(data), req);
   await sendWebSocket(secret, JSON.stringify(data));
   stats.webhookCount++;
-  return req.res.sendStatus(200)
 }
 
 async function makeMsg(data, secret) {

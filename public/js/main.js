@@ -10,6 +10,7 @@ let stats = {
     webhookCount: 0,
     messageCount: 0
 };
+let lastLogTime = null;
 
 // DOM元素
 const elements = {
@@ -40,10 +41,14 @@ const elements = {
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
     fetchServerConfig();
+    fetchLogs(true);
     setupEventListeners();
     
     // 每5秒更新一次服务器状态
     setInterval(fetchServerConfig, 5000);
+    
+    // 每2秒获取一次最新日志
+    setInterval(() => fetchLogs(false), 2000);
 });
 
 // 获取服务器配置
@@ -57,10 +62,73 @@ async function fetchServerConfig() {
         
         updateUI();
     } catch (error) {
-        addLog('获取服务器配置失败: ' + error.message, 'error');
+        addClientLog('获取服务器配置失败: ' + error.message, 'error');
         elements.serverStatus.textContent = '连接失败';
         elements.serverStatus.classList.remove('bg-green-500');
         elements.serverStatus.classList.add('bg-red-500');
+    }
+}
+
+// 获取服务器日志
+async function fetchLogs(isInitialFetch) {
+    try {
+        const url = isInitialFetch 
+            ? '/api/logs?count=50' 
+            : '/api/logs?count=10';
+            
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (isInitialFetch) {
+            // 初始加载，清空现有日志并添加所有
+            elements.logs.innerHTML = '';
+            data.logs.forEach(log => {
+                displayServerLog(log);
+            });
+            
+            if (data.logs.length > 0) {
+                lastLogTime = data.logs[0].time;
+            }
+        } else {
+            // 增量更新，只添加新日志
+            const newLogs = data.logs.filter(log => {
+                // 简单比较时间字符串，较新的日志会字典序大于旧日志
+                return !lastLogTime || log.time > lastLogTime;
+            });
+            
+            if (newLogs.length > 0) {
+                newLogs.forEach(log => {
+                    displayServerLog(log);
+                });
+                lastLogTime = newLogs[0].time;
+            }
+        }
+    } catch (error) {
+        // 只在初始加载时显示错误
+        if (isInitialFetch) {
+            addClientLog('获取服务器日志失败: ' + error.message, 'error');
+        }
+    }
+}
+
+// 显示服务器日志
+function displayServerLog(log) {
+    const logEntry = document.createElement('div');
+    logEntry.classList.add('log-entry', log.type || 'info');
+    
+    logEntry.textContent = `[${log.time}] ${log.message}`;
+    
+    // 添加到日志容器的顶部
+    if (elements.logs.firstChild) {
+        elements.logs.insertBefore(logEntry, elements.logs.firstChild);
+    } else {
+        elements.logs.appendChild(logEntry);
+    }
+    
+    // 限制显示的日志数量
+    const maxDisplayLogs = 100;
+    while (elements.logs.children.length > maxDisplayLogs) {
+        elements.logs.removeChild(elements.logs.lastChild);
     }
 }
 
@@ -96,7 +164,7 @@ function setupEventListeners() {
 async function handleAuthAction(actionType) {
     const secret = elements.secret.value.trim();
     if (!secret) {
-        addLog('请输入密钥', 'warning');
+        addClientLog('请输入密钥', 'warning');
         return;
     }
     
@@ -111,15 +179,15 @@ async function handleAuthAction(actionType) {
     }
     
     try {
-        addLog(`正在${actionName}授权: ${secret}`, 'info');
+        addClientLog(`正在${actionName}授权: ${secret}`, 'info');
         
         const response = await fetch(`/sign?secret=${encodeURIComponent(secret)}&cz=${actionType}&hours=${hours}`);
         const result = await response.json();
         
         showAuthResult(result);
-        addLog(`${actionName}授权完成: ${result.message}`, 'success');
+        addClientLog(`${actionName}授权完成: ${result.message}`, 'success');
     } catch (error) {
-        addLog(`${actionName}授权失败: ${error.message}`, 'error');
+        addClientLog(`${actionName}授权失败: ${error.message}`, 'error');
     }
 }
 
@@ -140,7 +208,7 @@ function showAuthResult(result) {
     
     elements.authResultContent.innerHTML = html;
     
-    // 3秒后隐藏结果
+    // 10秒后隐藏结果
     setTimeout(() => {
         elements.authResult.classList.add('hidden');
     }, 10000);
@@ -155,7 +223,7 @@ function toggleWebSocketConnection() {
     
     const secret = elements.wsSecret.value.trim();
     if (!secret) {
-        addLog('请输入WebSocket连接密钥', 'warning');
+        addClientLog('请输入WebSocket连接密钥', 'warning');
         return;
     }
     
@@ -167,7 +235,7 @@ function connectWebSocket(secret) {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/${secret}`;
     
-    addLog(`正在连接WebSocket: ${wsUrl}`, 'info');
+    addClientLog(`正在连接WebSocket: ${wsUrl}`, 'info');
     elements.wsStatusText.textContent = '正在连接...';
     elements.wsStatus.classList.remove('bg-red-500', 'bg-green-500');
     elements.wsStatus.classList.add('bg-yellow-500');
@@ -176,7 +244,7 @@ function connectWebSocket(secret) {
     wsConnection = new WebSocket(wsUrl);
     
     wsConnection.onopen = () => {
-        addLog('WebSocket连接成功', 'success');
+        addClientLog('WebSocket连接成功', 'success');
         elements.wsStatusText.textContent = '已连接';
         elements.wsStatus.classList.remove('bg-red-500', 'bg-yellow-500');
         elements.wsStatus.classList.add('bg-green-500');
@@ -197,12 +265,12 @@ function connectWebSocket(secret) {
                 setInterval(sendHeartbeat, interval);
             }
         } catch (error) {
-            addLog('解析WebSocket消息失败: ' + error.message, 'error');
+            addClientLog('解析WebSocket消息失败: ' + error.message, 'error');
         }
     };
     
     wsConnection.onclose = () => {
-        addLog('WebSocket连接已关闭', 'warning');
+        addClientLog('WebSocket连接已关闭', 'warning');
         elements.wsStatusText.textContent = '未连接';
         elements.wsStatus.classList.remove('bg-green-500', 'bg-yellow-500');
         elements.wsStatus.classList.add('bg-red-500');
@@ -211,7 +279,7 @@ function connectWebSocket(secret) {
     };
     
     wsConnection.onerror = (error) => {
-        addLog('WebSocket错误: ' + error.message, 'error');
+        addClientLog('WebSocket错误: ' + error.message, 'error');
         elements.wsStatusText.textContent = '连接错误';
         elements.wsStatus.classList.remove('bg-green-500', 'bg-yellow-500');
         elements.wsStatus.classList.add('bg-red-500');
@@ -248,14 +316,24 @@ function addWebSocketMessage(data, type) {
     elements.wsMessages.scrollTop = elements.wsMessages.scrollHeight;
 }
 
-// 添加日志
-function addLog(message, type = 'info') {
+// 添加客户端日志（本地浏览器生成的日志）
+function addClientLog(message, type = 'info') {
     const logEntry = document.createElement('div');
     logEntry.classList.add('log-entry', type);
     
     const timestamp = new Date().toLocaleTimeString();
-    logEntry.textContent = `[${timestamp}] ${message}`;
+    logEntry.textContent = `[${timestamp}] [客户端] ${message}`;
     
-    elements.logs.appendChild(logEntry);
-    elements.logs.scrollTop = elements.logs.scrollHeight;
+    // 添加到日志容器顶部
+    if (elements.logs.firstChild) {
+        elements.logs.insertBefore(logEntry, elements.logs.firstChild);
+    } else {
+        elements.logs.appendChild(logEntry);
+    }
+    
+    // 限制显示的日志数量
+    const maxDisplayLogs = 100;
+    while (elements.logs.children.length > maxDisplayLogs) {
+        elements.logs.removeChild(elements.logs.lastChild);
+    }
 } 

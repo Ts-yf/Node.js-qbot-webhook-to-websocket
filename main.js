@@ -76,6 +76,8 @@ async function makeMsg(data, secret) {
       switch (t) {
         case 'GROUP_AT_MESSAGE_CREATE':
           return log(`[${secret.slice(0, 3)}***][群消息]：${d.content}`)
+        case 'C2C_MESSAGE_CREATE':
+          return log(`[${secret.slice(0, 3)}***][私聊消息]：${d.content}`)
         default:
           return log(`[${secret.slice(0, 3)}***]收到消息类型：${t}`)
       }
@@ -83,30 +85,144 @@ async function makeMsg(data, secret) {
       return log(`[${secret.slice(0, 3)}***]收到消息：${JSON.stringify(data)}`)
   }
 }
+// 添加获取机器人信息的函数
+async function getBotInfo(secret, appId) {
+  try {
+    // 首先获取 access_token
+    const tokenResponse = await axios.post('https://bots.qq.com/app/getAppAccessToken', {
+      appId: appId,
+      clientSecret: secret
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const accessToken = tokenResponse.data.access_token;
+    
+    // 使用 access_token 获取机器人信息
+    const botInfoResponse = await axios.get('https://api.sgroup.qq.com/users/@me', {
+      headers: {
+        'Authorization': `QQBot ${accessToken}`
+      }
+    });
+    
+    return botInfoResponse.data;
+  } catch (error) {
+    log(`[${secret.slice(0, 3)}***]获取机器人信息失败:`, error.message);
+    return null;
+  }
+}
 
 async function makeWebSocket(str, ws, secret) {
   let data = {}
   let op1 = JSON.stringify({ "op": 11 })
-  let op2 = JSON.stringify({ "op": 0, "s": 1, "t": "READY", "d": { "version": 1, "session_id": "TSserver-bot-webhook-to-websocket", "user": { "bot": true }, "shard": [0, 0] } })
-  let op6 = { "op": 0, "s": 1, "t": "RESUMED", "d": "" }
-  try { data = JSON.parse(str) } catch (err) { return log('解析ws消息错误', err) }
-  if (!data.hasOwnProperty('op')) { await ws.send('{}'); return log('解析消息错误：缺少 op 字段') }
-  if (!data.hasOwnProperty('d')) { await ws.send('{}'); return log('解析消息错误：缺少 d 字段') }
-  let op = data.op; let d = data.d;
+  
+  try { 
+    data = JSON.parse(str) 
+  } catch (err) { 
+    return log('解析ws消息错误', err) 
+  }
+  
+  if (!data.hasOwnProperty('op')) { 
+    await ws.send('{}'); 
+    return log('解析消息错误：缺少 op 字段') 
+  }
+  
+  if (!data.hasOwnProperty('d')) { 
+    await ws.send('{}'); 
+    return log('解析消息错误：缺少 d 字段') 
+  }
+  
+  let op = data.op; 
+  let d = data.d;
+  
   switch (op) {
     case 1:
       log(`[${secret.slice(0, 3)}***]心跳周期：${str}`)
       return await ws.send(op1);
+      
     case 2:
       log(`[${secret.slice(0, 3)}***]鉴权请求：${str}`)
-      return await ws.send(op2);
+      
+      // 从原始请求中获取 appid
+      const req = ws._socket.upgradeReq;
+      const appId = req.headers["x-bot-appid"];
+      
+      if (appId && secret) {
+        try {
+          // 获取机器人信息
+          const botInfo = await getBotInfo(secret, appId);
+          
+          if (botInfo) {
+            const op2 = JSON.stringify({ 
+              "op": 0, 
+              "s": 1, 
+              "t": "READY", 
+              "d": { 
+                "version": 1, 
+                "session_id": "TSserver-bot-webhook-to-websocket", 
+                "user": {
+                  "id": botInfo.id,
+                  "username": botInfo.username,
+                  "bot": true
+                }, 
+                "shard": [0, 0] 
+              } 
+            });
+            return await ws.send(op2);
+          }
+        } catch (error) {
+          log(`[${secret.slice(0, 3)}***]获取机器人信息失败，使用默认信息:`, error.message);
+        }
+      }
+      
+      // 如果获取失败，使用默认信息
+      const defaultOp2 = JSON.stringify({ 
+        "op": 0, 
+        "s": 1, 
+        "t": "READY", 
+        "d": { 
+          "version": 1, 
+          "session_id": "TSserver-bot-webhook-to-websocket", 
+          "user": { 
+            "id": "0",
+            "username": "QQBot",
+            "bot": true 
+          }, 
+          "shard": [0, 0] 
+        } 
+      });
+      return await ws.send(defaultOp2);
+      
     case 6:
       log(`[${secret.slice(0, 3)}***][${d.session_id}]重新连接：${d.seq}`)
-      op6.s = d.seq || 1
+      let op6 = { 
+        "op": 0, 
+        "s": d.seq || 1, 
+        "t": "RESUMED", 
+        "d": "" 
+      }
       return await ws.send(JSON.stringify(op6));
+      
     default:
       log(`[${secret.slice(0, 3)}***]收到消息：${str}`)
-      return await ws.send(op2);
+      const defaultResponse = JSON.stringify({ 
+        "op": 0, 
+        "s": 1, 
+        "t": "READY", 
+        "d": { 
+          "version": 1, 
+          "session_id": "TSserver-bot-webhook-to-websocket", 
+          "user": { 
+            "id": "0",
+            "username": "QQBot",
+            "bot": true 
+          }, 
+          "shard": [0, 0] 
+        } 
+      });
+      return await ws.send(defaultResponse);
   }
 }
 
@@ -129,7 +245,8 @@ async function sendWebHook(secret, msg, req) {
   }
   for (let url of file[secret]) {
     try {
-      await axios.post(url, req.body)
+      let { data } = await axios.post(url, req.body)
+      log(`[${secret.slice(0, 3)}***]推送消息到WebHook：${url}，响应：`, data)
     } catch (err) { log(err) }
   }
 }
@@ -312,12 +429,18 @@ const server = createServer(app);
 const chatWS = new Server({ noServer: true }); //这里采用noServer
 chatWS.on("connection", (conn, req, secret) => {
   if (!cl.hasOwnProperty(secret)) cl[secret] = [];
-  cl[secret].push(conn)
-  conn.send(JSON.stringify({"op": 10,"d": {"heartbeat_interval": 90000}}))
+  cl[secret].push(conn);
+  
+  // 存储原始请求对象，以便后续获取 headers
+  conn._socket.upgradeReq = req;
+  
+  conn.send(JSON.stringify({"op": 10,"d": {"heartbeat_interval": 90000}}));
   log(`[${secret.slice(0, 3)}***]已连接[${cl[secret].length}]个实例`);
+  
   conn.on("message", async (str) => {
     return await makeWebSocket(str, conn, secret);
   });
+  
   conn.on('close', () => {
     if (cl.hasOwnProperty(secret)) cl[secret] = cl[secret].filter(client => client !== conn);
     log(`[${secret.slice(0, 3)}***]断开连接`);

@@ -3,7 +3,8 @@ let wsConnection = null;
 let serverConfig = {
     useAuth: false,
     webhook: false,
-    port: 8000
+    port: 8000,
+    ownerSecretConfigured: false
 };
 let stats = {
     activeConnections: 0,
@@ -11,6 +12,7 @@ let stats = {
     messageCount: 0
 };
 let lastLogTime = null;
+let webhookToggleBusy = false;
 
 // DOM元素
 const elements = {
@@ -25,24 +27,37 @@ const elements = {
     clearLogs: document.getElementById('clear-logs'),
     secret: document.getElementById('secret'),
     hours: document.getElementById('hours'),
+    ownerSecret: document.getElementById('owner-secret'),
+    ownerTip: document.getElementById('owner-tip'),
     queryAuth: document.getElementById('query-auth'),
     addAuth: document.getElementById('add-auth'),
     reduceAuth: document.getElementById('reduce-auth'),
     deleteAuth: document.getElementById('delete-auth'),
     authResult: document.getElementById('auth-result'),
     authResultContent: document.getElementById('auth-result-content'),
+    webhookSecret: document.getElementById('webhook-secret'),
+    webhookUrls: document.getElementById('webhook-urls'),
+    loadWebhookTargets: document.getElementById('load-webhook-targets'),
+    saveWebhookTargets: document.getElementById('save-webhook-targets'),
+    toggleWebhook: document.getElementById('toggle-webhook'),
+    webhookResult: document.getElementById('webhook-result'),
+    webhookResultContent: document.getElementById('webhook-result-content'),
     wsSecret: document.getElementById('ws-secret'),
     connectWs: document.getElementById('connect-ws'),
     wsStatus: document.getElementById('ws-status'),
     wsStatusText: document.getElementById('ws-status-text'),
-    wsMessages: document.getElementById('ws-messages')
+    wsMessages: document.getElementById('ws-messages'),
+    themeToggle: document.getElementById('theme-toggle'),
+    themeSystem: document.getElementById('theme-system')
 };
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
+    initThemeMode();
     fetchServerConfig();
     fetchLogs(true);
     setupEventListeners();
+    updateOwnerControls();
     
     // 每5秒更新一次服务器状态
     setInterval(fetchServerConfig, 5000);
@@ -141,6 +156,9 @@ function updateUI() {
     elements.activeConnections.textContent = stats.activeConnections;
     elements.webhookCount.textContent = stats.webhookCount;
     elements.messageCount.textContent = stats.messageCount;
+
+    updateWebhookToggleButton();
+    updateOwnerControls();
 }
 
 // 设置事件监听器
@@ -156,8 +174,284 @@ function setupEventListeners() {
     elements.reduceAuth.addEventListener('click', () => handleAuthAction(3));
     elements.deleteAuth.addEventListener('click', () => handleAuthAction(4));
     
+    elements.ownerSecret.addEventListener('input', updateOwnerControls);
+
+    // WebHook转发配置
+    elements.loadWebhookTargets.addEventListener('click', loadWebhookTargets);
+    elements.saveWebhookTargets.addEventListener('click', saveWebhookTargets);
+    elements.toggleWebhook.addEventListener('click', toggleWebhookSwitch);
+
+    // 主题模式
+    if (elements.themeToggle) {
+        elements.themeToggle.addEventListener('click', toggleThemeMode);
+    }
+    if (elements.themeSystem) {
+        elements.themeSystem.addEventListener('click', enableSystemTheme);
+    }
+
     // WebSocket连接
     elements.connectWs.addEventListener('click', toggleWebSocketConnection);
+}
+
+function initThemeMode() {
+    const savedMode = localStorage.getItem('theme-mode');
+    const initialMode = ['light', 'dark'].includes(savedMode) ? savedMode : 'system';
+    applyThemeMode(initialMode, false);
+
+    if (window.matchMedia) {
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        const onSystemThemeChange = () => {
+            const mode = document.body.getAttribute('data-theme-mode') || 'system';
+            if (mode === 'system') {
+                applyThemeMode('system', false);
+            }
+        };
+
+        if (typeof mediaQuery.addEventListener === 'function') {
+            mediaQuery.addEventListener('change', onSystemThemeChange);
+        } else if (typeof mediaQuery.addListener === 'function') {
+            mediaQuery.addListener(onSystemThemeChange);
+        }
+    }
+}
+
+function applyThemeMode(mode, saveMode) {
+    const normalizedMode = ['system', 'light', 'dark'].includes(mode) ? mode : 'system';
+    const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const resolvedTheme = normalizedMode === 'system' ? (systemDark ? 'dark' : 'light') : normalizedMode;
+
+    document.body.setAttribute('data-theme-mode', normalizedMode);
+    document.body.setAttribute('data-theme', resolvedTheme);
+    updateThemeToggleButton(resolvedTheme, normalizedMode);
+    updateThemeSystemButton(normalizedMode);
+
+    if (saveMode) {
+        if (normalizedMode === 'system') {
+            localStorage.removeItem('theme-mode');
+        } else {
+            localStorage.setItem('theme-mode', normalizedMode);
+        }
+    }
+}
+
+function updateThemeToggleButton(resolvedTheme, mode) {
+    if (!elements.themeToggle) return;
+
+    const isDark = resolvedTheme === 'dark';
+    elements.themeToggle.textContent = isDark ? '☀️' : '🌙';
+    elements.themeToggle.setAttribute('aria-label', isDark ? '切换到浅色模式' : '切换到深色模式');
+
+    if (mode === 'system') {
+        elements.themeToggle.title = `跟随系统（当前${isDark ? '深色' : '浅色'}，点击改为手动${isDark ? '浅色' : '深色'}）`;
+    } else {
+        elements.themeToggle.title = isDark ? '当前深色，点击切换到浅色' : '当前浅色，点击切换到深色';
+    }
+}
+
+function updateThemeSystemButton(mode) {
+    if (!elements.themeSystem) return;
+    const isSystem = mode === 'system';
+    elements.themeSystem.classList.toggle('active', isSystem);
+    elements.themeSystem.setAttribute('aria-pressed', String(isSystem));
+    elements.themeSystem.title = isSystem ? '当前已跟随系统' : '点击切换为跟随系统';
+}
+
+function toggleThemeMode() {
+    const currentTheme = document.body.getAttribute('data-theme') || 'light';
+    const nextMode = currentTheme === 'dark' ? 'light' : 'dark';
+    applyThemeMode(nextMode, true);
+}
+
+function enableSystemTheme() {
+    applyThemeMode('system', true);
+}
+
+function updateOwnerControls() {
+    const hasOwnerSecret = !!elements.ownerSecret.value.trim();
+    const ownerConfigured = !!serverConfig.ownerSecretConfigured;
+
+    const authButtons = [elements.queryAuth, elements.addAuth, elements.reduceAuth, elements.deleteAuth];
+    authButtons.forEach(button => {
+        button.disabled = !ownerConfigured || !hasOwnerSecret;
+        if (button.disabled) {
+            button.classList.add('opacity-50', 'cursor-not-allowed');
+        } else {
+            button.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+    });
+
+    const webhookModifyButtons = [elements.saveWebhookTargets, elements.toggleWebhook];
+    webhookModifyButtons.forEach(button => {
+        button.disabled = !ownerConfigured || !hasOwnerSecret;
+        if (button.disabled) {
+            button.classList.add('opacity-50', 'cursor-not-allowed');
+        } else {
+            button.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+    });
+
+    if (!ownerConfigured) {
+        elements.ownerTip.textContent = '安全模式：服务端未配置主人密钥，已禁止所有授权操作。';
+        return;
+    }
+
+    elements.ownerTip.textContent = hasOwnerSecret
+        ? '已输入主人密钥：可执行授权与Webhook管理操作。'
+        : '安全模式：未填写主人密钥时，已禁止所有授权操作。';
+}
+
+function updateWebhookToggleButton() {
+    if (!elements.toggleWebhook) return;
+    const enabled = !!serverConfig.webhook;
+    elements.toggleWebhook.textContent = enabled ? '关闭WebHook转发' : '开启WebHook转发';
+    elements.toggleWebhook.classList.remove('bg-purple-600', 'hover:bg-purple-700', 'bg-gray-600', 'hover:bg-gray-700');
+    if (enabled) {
+        elements.toggleWebhook.classList.add('bg-gray-600', 'hover:bg-gray-700');
+    } else {
+        elements.toggleWebhook.classList.add('bg-purple-600', 'hover:bg-purple-700');
+    }
+}
+
+function showWebhookResult(result, isError = false) {
+    elements.webhookResult.classList.remove('hidden');
+    const message = (result && result.message) ? result.message : (isError ? '操作失败' : '操作成功');
+    const urls = Array.isArray(result?.urls) ? result.urls : [];
+
+    let html = `<p><strong>状态:</strong> ${message}</p>`;
+    if (typeof result?.webhook === 'boolean') {
+        html += `<p><strong>转发开关:</strong> ${result.webhook ? '已启用' : '已禁用'}</p>`;
+    }
+    if (result?.secret) {
+        html += `<p><strong>目标密钥:</strong> ${result.secret}</p>`;
+    }
+    if (urls.length > 0) {
+        html += `<p><strong>当前URL数量:</strong> ${urls.length}</p>`;
+    }
+
+    elements.webhookResultContent.innerHTML = html;
+}
+
+async function loadWebhookTargets() {
+    const secret = elements.webhookSecret.value.trim();
+    if (!secret) {
+        addClientLog('请输入要读取的Webhook目标密钥', 'warning');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/webhook/targets?secret=${encodeURIComponent(secret)}`);
+        const result = await response.json();
+
+        if (!response.ok) {
+            showWebhookResult(result, true);
+            addClientLog(`读取Webhook转发目标失败: ${result.message || '请求异常'}`, 'error');
+            return;
+        }
+
+        const urls = Array.isArray(result.urls) ? result.urls : [];
+        elements.webhookUrls.value = urls.join('\n');
+        if (typeof result.webhook === 'boolean') {
+            serverConfig.webhook = result.webhook;
+            updateWebhookToggleButton();
+        }
+
+        showWebhookResult({
+            message: '已读取Webhook转发配置',
+            secret: result.secret,
+            webhook: result.webhook,
+            urls
+        });
+        addClientLog(`读取Webhook转发目标成功: ${secret}（${urls.length}条）`, 'success');
+    } catch (error) {
+        showWebhookResult({ message: error.message }, true);
+        addClientLog(`读取Webhook转发目标失败: ${error.message}`, 'error');
+    }
+}
+
+async function saveWebhookTargets() {
+    const secret = elements.webhookSecret.value.trim();
+    const ownerSecret = elements.ownerSecret.value.trim();
+    if (!secret) {
+        addClientLog('请输入要保存的Webhook目标密钥', 'warning');
+        return;
+    }
+    if (!ownerSecret) {
+        addClientLog('保存Webhook转发目标需要主人密钥', 'warning');
+        return;
+    }
+
+    const urls = elements.webhookUrls.value
+        .split('\n')
+        .map(item => item.trim())
+        .filter(Boolean);
+
+    try {
+        const response = await fetch('/api/webhook/targets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                secret,
+                urls,
+                owner_secret: ownerSecret
+            })
+        });
+        const result = await response.json();
+
+        showWebhookResult(result, !response.ok);
+        if (!response.ok) {
+            addClientLog(`保存Webhook转发目标失败: ${result.message || '请求异常'}`, 'error');
+            return;
+        }
+
+        addClientLog(`保存Webhook转发目标成功: ${secret}（${urls.length}条）`, 'success');
+    } catch (error) {
+        showWebhookResult({ message: error.message }, true);
+        addClientLog(`保存Webhook转发目标失败: ${error.message}`, 'error');
+    }
+}
+
+async function toggleWebhookSwitch() {
+    if (webhookToggleBusy) return;
+
+    const ownerSecret = elements.ownerSecret.value.trim();
+    if (!ownerSecret) {
+        addClientLog('切换Webhook转发开关需要主人密钥', 'warning');
+        return;
+    }
+
+    webhookToggleBusy = true;
+    elements.toggleWebhook.disabled = true;
+
+    const targetEnabled = !serverConfig.webhook;
+
+    try {
+        const response = await fetch('/api/webhook/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enabled: targetEnabled,
+                owner_secret: ownerSecret
+            })
+        });
+        const result = await response.json();
+
+        showWebhookResult(result, !response.ok);
+        if (!response.ok) {
+            addClientLog(`切换Webhook转发开关失败: ${result.message || '请求异常'}`, 'error');
+            return;
+        }
+
+        serverConfig.webhook = !!result.webhook;
+        updateWebhookToggleButton();
+        elements.webhookMode.textContent = serverConfig.webhook ? '已启用' : '未启用';
+        addClientLog(`Webhook转发开关已${serverConfig.webhook ? '开启' : '关闭'}`, 'success');
+    } catch (error) {
+        showWebhookResult({ message: error.message }, true);
+        addClientLog(`切换Webhook转发开关失败: ${error.message}`, 'error');
+    } finally {
+        webhookToggleBusy = false;
+        elements.toggleWebhook.disabled = false;
+    }
 }
 
 // 处理授权操作
@@ -169,6 +463,7 @@ async function handleAuthAction(actionType) {
     }
     
     const hours = parseInt(elements.hours.value) || 0;
+    const ownerSecret = elements.ownerSecret.value.trim();
     let actionName = '';
     
     switch (actionType) {
@@ -178,13 +473,32 @@ async function handleAuthAction(actionType) {
         case 4: actionName = '删除'; break;
     }
     
+    if ([2, 3, 4].includes(actionType) && !ownerSecret) {
+        addClientLog('修改授权需要主人密钥', 'warning');
+        return;
+    }
+
     try {
         addClientLog(`正在${actionName}授权: ${secret}`, 'info');
-        
-        const response = await fetch(`/sign?secret=${encodeURIComponent(secret)}&cz=${actionType}&hours=${hours}`);
+
+        const query = new URLSearchParams({
+            secret,
+            cz: String(actionType),
+            hours: String(hours)
+        });
+
+        if ([2, 3, 4].includes(actionType) && ownerSecret) {
+            query.set('owner_secret', ownerSecret);
+        }
+
+        const response = await fetch(`/sign?${query.toString()}`);
         const result = await response.json();
-        
+
         showAuthResult(result);
+        if (!response.ok) {
+            addClientLog(`${actionName}授权失败: ${result.message || '无权限或请求异常'}`, 'error');
+            return;
+        }
         addClientLog(`${actionName}授权完成: ${result.message}`, 'success');
     } catch (error) {
         addClientLog(`${actionName}授权失败: ${error.message}`, 'error');
@@ -307,6 +621,16 @@ function addWebSocketMessage(data, type) {
         } else {
             content = `OP ${data.op}: ${JSON.stringify(data)}`;
         }
+        
+        // 更新页脚年份范围（2024-今年）
+        (function updateCopyrightYearRange() {
+            const el = document.getElementById('copyright-year-range');
+            if (!el) return;
+        
+            const startYear = 2024;
+            const currentYear = new Date().getFullYear();
+            el.textContent = currentYear > startYear ? `${startYear}-${currentYear}` : `${startYear}`;
+        })();
     } else {
         content = data;
     }

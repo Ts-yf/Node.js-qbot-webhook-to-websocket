@@ -1,6 +1,93 @@
 /* 自定义样式 */
 body {
     font-family: 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+    transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* 主题模式（默认跟随系统，由JS写入data-theme） */
+body[data-theme='light'] {
+    background-color: #f3f4f6;
+    color: #111827;
+}
+
+body[data-theme='dark'] {
+    background-color: #0f172a;
+    color: #e5e7eb;
+}
+
+body[data-theme='dark'] .bg-white {
+    background-color: #111827 !important;
+    color: #e5e7eb;
+}
+
+body[data-theme='dark'] .text-gray-600,
+body[data-theme='dark'] .text-gray-700,
+body[data-theme='dark'] .text-gray-800 {
+    color: #cbd5e1 !important;
+}
+
+body[data-theme='dark'] .text-blue-700 {
+    color: #93c5fd !important;
+}
+
+body[data-theme='dark'] .bg-gray-100 {
+    background-color: #0f172a !important;
+}
+
+body[data-theme='dark'] #auth-result,
+body[data-theme='dark'] #webhook-result,
+body[data-theme='dark'] #ws-messages {
+    background-color: #1f2937 !important;
+    color: #e5e7eb;
+}
+
+body[data-theme='dark'] input,
+body[data-theme='dark'] textarea,
+body[data-theme='dark'] select {
+    background-color: #1f2937;
+    color: #e5e7eb;
+    border-color: #374151;
+}
+
+body[data-theme='dark'] ::-webkit-scrollbar-track {
+    background: #1f2937;
+}
+
+body[data-theme='dark'] ::-webkit-scrollbar-thumb {
+    background: #64748b;
+}
+
+body[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+.theme-toggle-btn,
+.theme-system-btn {
+    transition: transform 0.2s ease, background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
+.theme-toggle-btn:hover,
+.theme-system-btn:hover {
+    transform: translateY(-1px);
+}
+
+.theme-system-btn.active {
+    background-color: #dbeafe;
+    color: #1d4ed8;
+    border-color: #93c5fd;
+}
+
+body[data-theme='dark'] .theme-toggle-btn,
+body[data-theme='dark'] .theme-system-btn {
+    background-color: #1f2937 !important;
+    color: #e5e7eb;
+    border-color: #374151;
+}
+
+body[data-theme='dark'] .theme-system-btn.active {
+    background-color: #1e3a8a !important;
+    color: #dbeafe;
+    border-color: #3b82f6;
 }
 
 /* 日志区域样式 */
@@ -39,10 +126,22 @@ body {
 
 #ws-messages .message.received {
     background-color: #e2e8f0;
+    color: #1f2937;
 }
 
 #ws-messages .message.sent {
     background-color: #bee3f8;
+    color: #1f2937;
+}
+
+body[data-theme='dark'] #ws-messages .message.received {
+    background-color: #334155;
+    color: #e5e7eb;
+}
+
+body[data-theme='dark'] #ws-messages .message.sent {
+    background-color: #1e3a8a;
+    color: #dbeafe;
 }
 
 /* 动画效果 */
